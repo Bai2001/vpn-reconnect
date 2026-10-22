@@ -163,12 +163,12 @@ public sealed class AppHost : IDisposable
         _log.Clear();
     }
 
-    public string? Save(AppSettings settings, string passwordFromBox)
+    public SaveOutcome Save(AppSettings settings, string passwordFromBox)
     {
         var error = SettingsValidator.Validate(settings);
         if (error is not null)
         {
-            return error;
+            return new SaveOutcome(error, null);
         }
 
         settings = SettingsValidator.Normalize(settings);
@@ -184,11 +184,11 @@ public sealed class AppHost : IDisposable
             }
             catch (System.Security.Cryptography.CryptographicException ex)
             {
-                return $"密码保存失败：{ex.Message}";
+                return new SaveOutcome($"密码保存失败：{ex.Message}", null);
             }
             catch (IOException ex)
             {
-                return $"密码保存失败：{ex.Message}";
+                return new SaveOutcome($"密码保存失败：{ex.Message}", null);
             }
         }
 
@@ -208,19 +208,105 @@ public sealed class AppHost : IDisposable
         var exe = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(exe))
         {
-            return "找不到当前程序路径，开机启动未更新";
+            return new SaveOutcome("已保存，但找不到当前程序路径，开机启动未更新", null);
+        }
+
+        return ApplyAutoStart(exe, settings.StartOnLogin);
+    }
+
+    /// <summary>当前权限与开机启动方式，显示在设置页给用户核对。</summary>
+    public string StartupSummary()
+    {
+        var parts = new List<string>
+        {
+            IsElevated() ? "当前权限：管理员" : "当前权限：普通用户",
+        };
+
+        if (LoginTaskRegistrar.Exists())
+        {
+            parts.Add("开机启动：计划任务（最高权限）");
+        }
+        else if (RunKeyRegistrar.Exists())
+        {
+            parts.Add("开机启动：注册表自启（普通权限）");
+        }
+        else
+        {
+            parts.Add("开机启动：未启用");
+        }
+
+        return string.Join(" · ", parts);
+    }
+
+    private static SaveOutcome ApplyAutoStart(string exePath, bool enabled)
+    {
+        var elevated = IsElevated();
+        var taskExists = LoginTaskRegistrar.Exists();
+
+        // 已有高权限计划任务但当前没提权：保持现状，别重复写注册表自启（会双启动）
+        if (enabled && taskExists && !elevated)
+        {
+            RunKeyRegistrar.Remove();
+            var registered = LoginTaskRegistrar.RegisteredExePath();
+            var same = !string.IsNullOrWhiteSpace(registered)
+                && string.Equals(registered, exePath, StringComparison.OrdinalIgnoreCase);
+            return same
+                ? new SaveOutcome(null, "开机启动：已由现有计划任务负责（最高权限），本次无需改动")
+                : new SaveOutcome(
+                    null,
+                    $"开机启动：现有计划任务指向 {registered}，与当前程序路径不同。请右键以管理员身份运行本程序后再保存一次以更新。");
+        }
+
+        var mode = AutoStartPlanner.Decide(enabled, elevated, taskExists);
+        if (mode == AutoStartMode.Disabled)
+        {
+            var deleteError = LoginTaskRegistrar.Apply(LoginTaskSpec.For(exePath), false);
+            RunKeyRegistrar.Remove();
+            return deleteError is null
+                ? new SaveOutcome(null, "已关闭开机启动")
+                : new SaveOutcome(deleteError, null);
+        }
+
+        if (mode == AutoStartMode.ScheduledTask)
+        {
+            var failure = LoginTaskRegistrar.Apply(LoginTaskSpec.For(exePath), true);
+            if (failure is null)
+            {
+                RunKeyRegistrar.Remove();
+                return new SaveOutcome(null, "开机启动：已注册计划任务（最高权限，断线时能重启服务）");
+            }
+
+            try
+            {
+                RunKeyRegistrar.Apply(exePath);
+                return new SaveOutcome(
+                    null,
+                    $"计划任务注册失败（{failure}），已改用注册表自启动。该方式以普通权限运行，断线时重启服务会被拒绝；需要完整恢复能力请右键以管理员身份运行本程序后再保存一次。");
+            }
+            catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+            {
+                return new SaveOutcome($"开机启动注册失败：{failure}；注册表自启动也失败：{ex.Message}", null);
+            }
         }
 
         try
         {
-            LoginTaskRegistrar.Apply(LoginTaskSpec.For(exe), settings.StartOnLogin);
+            RunKeyRegistrar.Apply(exePath);
+            return new SaveOutcome(
+                null,
+                "开机启动：已设为当前用户自启动（注册表，普通权限）。普通权限下断线时无法重启服务，如需完整恢复能力，请右键以管理员身份运行本程序后再保存一次。");
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
         {
-            return ex.Message;
+            return new SaveOutcome($"开机启动设置失败：{ex.Message}", null);
         }
+    }
 
-        return null;
+    private static bool IsElevated()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        var principal = new System.Security.Principal.WindowsPrincipal(identity);
+        return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
     }
 
     public Task CheckOnceAsync()
@@ -419,6 +505,8 @@ public sealed class AppHost : IDisposable
         dispatcher.Invoke(action);
     }
 }
+
+public readonly record struct SaveOutcome(string? Error, string? Note);
 
 public readonly record struct StatusSnapshot(
     bool Checked,

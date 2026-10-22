@@ -46,6 +46,7 @@ public partial class MainWindow : Window
             ? "已保存密码。密码框不回显已存密码，留空则不修改"
             : "尚未保存密码。填写后点保存，密码会用当前 Windows 账号加密保存";
         FillAdapters(settings.SelectedAdapterName);
+        StartupStatusText.Text = _host.StartupSummary();
         RefreshLive();
     }
 
@@ -123,7 +124,7 @@ public partial class MainWindow : Window
         var adapterName = ChosenAdapter();
         if (string.IsNullOrWhiteSpace(adapterName))
         {
-            SetMessage("请先在列表中选择适配器。断线时该接口会从列表消失，请在它有地址时选择。", isError: true);
+            SetMessage("请先在列表中选择适配器。断线时该接口会从列表消失，请在它有地址时选择。", MessageKind.Error);
             return;
         }
 
@@ -135,16 +136,22 @@ public partial class MainWindow : Window
             interval,
             StartOnLoginBox.IsChecked == true);
         var password = PasswordBox.Password;
-        var error = _host.Save(settings, password);
+        var outcome = _host.Save(settings, password);
         PasswordBox.Clear();
         Reload();
-        if (error is null)
+        if (outcome.Error is not null)
         {
-            SetMessage("已保存。新的设置已生效。", isError: false);
+            SetMessage(outcome.Error, MessageKind.Error);
             return;
         }
 
-        SetMessage(error, isError: true);
+        if (outcome.Note is not null)
+        {
+            SetMessage($"已保存。{outcome.Note}", MessageKind.Note);
+            return;
+        }
+
+        SetMessage("已保存。新的设置已生效。", MessageKind.Success);
     }
 
     private void RefreshLog_Click(object sender, RoutedEventArgs e)
@@ -207,10 +214,15 @@ public partial class MainWindow : Window
         return _keptAdapterName;
     }
 
-    private void SetMessage(string text, bool isError)
+    private void SetMessage(string text, MessageKind kind)
     {
         SettingsMessage.Text = text;
-        SettingsMessage.Foreground = isError ? BadBrush : OkBrush;
+        SettingsMessage.Foreground = kind switch
+        {
+            MessageKind.Error => BadBrush,
+            MessageKind.Note => WarnBrush,
+            _ => OkBrush,
+        };
     }
 
     private void ShowStatus(StatusSnapshot snapshot, IReadOnlyList<LogRow> rows, int intervalSeconds)
@@ -352,3 +364,10 @@ public sealed class AdapterRow
 }
 
 public sealed record LogItem(string Time, string Step, string Result, string Evidence, Brush ResultBrush);
+
+public enum MessageKind
+{
+    Success,
+    Note,
+    Error,
+}
