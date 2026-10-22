@@ -76,6 +76,7 @@ jobs:
             -p:DebugType=embedded `
             -p:Version=${{ steps.ver.outputs.version }} `
             -p:InformationalVersion=${{ steps.ver.outputs.version }} `
+            -p:IncludeSourceRevisionInInformationalVersion=false `
             -o publish
 
       - name: 校验产物
@@ -97,7 +98,8 @@ jobs:
           $name = "VpnReconnect-$version-win-x64"
           Compress-Archive -Path 'publish/VpnReconnect.exe', 'README.md' -DestinationPath "$name.zip" -Force
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $name.zip" | Out-File -FilePath "$name.zip.sha256" -Encoding utf8NoBOM
+          # 用 LF + 无 BOM 写出，方便 sha256sum -c 直接校验
+          [System.IO.File]::WriteAllText((Join-Path $PWD "$name.zip.sha256"), "$hash  $name.zip`n")
           Write-Host "$name.zip $([math]::Round((Get-Item "$name.zip").Length / 1MB, 1)) MB"
           Get-ChildItem "$name.*" | Select-Object Name, Length
 
