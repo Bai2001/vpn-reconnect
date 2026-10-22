@@ -15,6 +15,7 @@
             <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
             <SolidColorBrush x:Key="AccentDarkBrush" Color="#1D4ED8" />
             <SolidColorBrush x:Key="AccentSoftBrush" Color="#EFF4FF" />
+            <SolidColorBrush x:Key="GridSelectedBrush" Color="#E3ECFB" />
             <SolidColorBrush x:Key="OkBrush" Color="#16A34A" />
             <SolidColorBrush x:Key="WarnBrush" Color="#D97706" />
             <SolidColorBrush x:Key="BadBrush" Color="#DC2626" />
@@ -157,7 +158,8 @@
 
             <!-- 输入控件 -->
             <Style TargetType="TextBox">
-                <Setter Property="Padding" Value="10,6" />
+                <Setter Property="Padding" Value="7,2" />
+                <Setter Property="Height" Value="32" />
                 <Setter Property="MinHeight" Value="32" />
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
@@ -191,7 +193,8 @@
             </Style>
 
             <Style TargetType="PasswordBox">
-                <Setter Property="Padding" Value="10,6" />
+                <Setter Property="Padding" Value="7,2" />
+                <Setter Property="Height" Value="32" />
                 <Setter Property="MinHeight" Value="32" />
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="Background" Value="White" />
@@ -310,7 +313,6 @@
 
             <Style TargetType="TabItem">
                 <Setter Property="FontSize" Value="13" />
-                <Setter Property="Cursor" Value="Hand" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TabItem">
@@ -319,7 +321,8 @@
                                     BorderBrush="Transparent"
                                     BorderThickness="0,0,0,2"
                                     Padding="16,11"
-                                    Margin="0,0,2,0">
+                                    Margin="0,0,2,0"
+                                    Cursor="Hand">
                                 <ContentPresenter x:Name="Cp"
                                                   ContentSource="Header"
                                                   HorizontalAlignment="Center"
@@ -372,12 +375,19 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="DataGridCell">
-                            <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
                                 <ContentPresenter VerticalAlignment="Center" />
                             </Border>
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
+                <Style.Triggers>
+                    <!-- 选中时保持深色文字，避免主题把文字刷成白色后与浅色背景重叠 -->
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{StaticResource GridSelectedBrush}" />
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                    </Trigger>
+                </Style.Triggers>
             </Style>
 
             <Style TargetType="DataGridRow">
@@ -385,6 +395,10 @@
                 <Style.Triggers>
                     <Trigger Property="IsMouseOver" Value="True">
                         <Setter Property="Background" Value="#F8FAFC" />
+                    </Trigger>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{StaticResource GridSelectedBrush}" />
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
                     </Trigger>
                 </Style.Triggers>
             </Style>
