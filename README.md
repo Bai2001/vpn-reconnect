@@ -21,7 +21,8 @@ dotnet test vpn-reconnect.sln
 .\src\VpnReconnect.App\bin\Debug\net8.0-windows\VpnReconnect.exe
 ```
 
-带 `--background` 启动时不弹窗口，只驻留托盘（开机启动用的就是这个）。
+带 `--background` 启动时不弹窗口，只驻留托盘（开机启动的计划任务用的就是这个）。
+Windows 重启/更新后自动重开本程序时也会带上该参数，因此同样不会弹窗；只有用户主动打开程序（开始菜单、桌面快捷方式、双击 exe）才会显示窗口。
 
 ## 使用
 

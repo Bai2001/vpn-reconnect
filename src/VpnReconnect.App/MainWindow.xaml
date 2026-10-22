@@ -136,7 +136,7 @@
                                 </StackPanel>
 
                                 <TextBlock Grid.Row="6" Grid.Column="0" Text="开机启动" Style="{StaticResource FieldLabel}" Margin="0,0,12,8" />
-                                <CheckBox Grid.Row="6" Grid.Column="1" x:Name="StartOnLoginBox" Content="登录 Windows 后自动在后台运行" Margin="0,0,0,8" />
+                                <CheckBox Grid.Row="6" Grid.Column="1" x:Name="StartOnLoginBox" Content="登录 Windows 后静默启动（只在托盘，不弹窗口）" Margin="0,0,0,8" />
                             </Grid>
                         </StackPanel>
                     </Border>
