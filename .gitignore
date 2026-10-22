@@ -1,0 +1,5 @@
+bin/
+obj/
+.superpowers/
+*.user
+credentials.bin
