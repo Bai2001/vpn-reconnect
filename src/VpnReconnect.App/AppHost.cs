@@ -257,7 +257,12 @@ public sealed class AppHost : IDisposable
                     $"开机启动：现有计划任务指向 {registered}，与当前程序路径不同。请右键以管理员身份运行本程序后再保存一次以更新。");
         }
 
-        var mode = AutoStartPlanner.Decide(enabled, elevated, taskExists);
+        var mode = AutoStartPlanner.Decide(enabled, elevated, taskExists, IsDebugBuild());
+        if (mode == AutoStartMode.SkippedDebugBuild)
+        {
+            return new SaveOutcome(null, SkipDebugBuildAutostart(exePath));
+        }
+
         if (mode == AutoStartMode.Disabled)
         {
             var deleteError = LoginTaskRegistrar.Apply(LoginTaskSpec.For(exePath), false);
@@ -300,6 +305,51 @@ public sealed class AppHost : IDisposable
         {
             return new SaveOutcome($"开机启动设置失败：{ex.Message}", null);
         }
+    }
+
+    /// <summary>
+    /// 调试构建不写开机启动，并把指向本 exe 的旧自启动顺手清掉，
+    /// 避免开发调试时把 bin\Debug 的 exe 注册成开机启动。
+    /// </summary>
+    private static string SkipDebugBuildAutostart(string exePath)
+    {
+        var cleaned = new List<string>();
+        try
+        {
+            if (SamePath(LoginTaskRegistrar.RegisteredExePath(), exePath)
+                && LoginTaskRegistrar.Apply(LoginTaskSpec.For(exePath), false) is null)
+            {
+                cleaned.Add("计划任务");
+            }
+
+            if (SamePath(RunKeyRegistrar.RegisteredPath(), exePath))
+            {
+                RunKeyRegistrar.Remove();
+                cleaned.Add("注册表自启");
+            }
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            _ = ex;
+        }
+
+        var suffix = cleaned.Count == 0 ? "" : $"已清理指向本调试版的{string.Join("、", cleaned)}。";
+        return $"当前是调试版本，不注册开机启动（避免把 bin\\Debug 的 exe 设成自启动）。{suffix}请用 Release 版本设置开机启动。";
+    }
+
+    private static bool SamePath(string? registered, string exePath)
+    {
+        return !string.IsNullOrWhiteSpace(registered)
+            && string.Equals(registered, exePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDebugBuild()
+    {
+#if DEBUG
+        return true;
+#else
+        return false;
+#endif
     }
 
     private static bool IsElevated()

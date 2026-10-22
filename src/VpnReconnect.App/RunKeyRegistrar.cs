@@ -23,6 +23,26 @@ public static class RunKeyRegistrar
         key?.DeleteValue(ValueName, throwOnMissingValue: false);
     }
 
+    /// <summary>已注册的命令行里的程序路径（取不到返回 null）。</summary>
+    public static string? RegisteredPath()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
+        if (key?.GetValue(ValueName) is not string value)
+        {
+            return null;
+        }
+
+        var text = value.Trim();
+        if (text.StartsWith('"'))
+        {
+            var end = text.IndexOf('"', 1);
+            return end > 1 ? text[1..end] : text[1..];
+        }
+
+        var space = text.IndexOf(' ');
+        return space > 0 ? text[..space] : text;
+    }
+
     public static bool Exists()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);

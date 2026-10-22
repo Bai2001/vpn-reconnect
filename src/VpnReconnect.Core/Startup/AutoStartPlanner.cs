@@ -11,6 +11,9 @@ public enum AutoStartMode
 
     /// <summary>注册表 HKCU Run（不需要管理员，但只有普通权限）。</summary>
     RunKey = 2,
+
+    /// <summary>调试构建不注册开机启动，避免把 bin\Debug 的 exe 设成自启动。</summary>
+    SkippedDebugBuild = 3,
 }
 
 /// <summary>
@@ -19,11 +22,16 @@ public enum AutoStartMode
 /// </summary>
 public static class AutoStartPlanner
 {
-    public static AutoStartMode Decide(bool requested, bool elevated, bool taskExists)
+    public static AutoStartMode Decide(bool requested, bool elevated, bool taskExists, bool debugBuild = false)
     {
         if (!requested)
         {
             return AutoStartMode.Disabled;
+        }
+
+        if (debugBuild)
+        {
+            return AutoStartMode.SkippedDebugBuild;
         }
 
         if (taskExists)
