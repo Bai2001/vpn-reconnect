@@ -1,5 +1,9 @@
 # 公司 VPN 重连
 
+[![CI](https://github.com/Bai2001/vpn-reconnect/actions/workflows/ci.yml/badge.svg)](https://github.com/Bai2001/vpn-reconnect/actions/workflows/ci.yml)
+[![Release](https://github.com/Bai2001/vpn-reconnect/actions/workflows/release.yml/badge.svg)](https://github.com/Bai2001/vpn-reconnect/actions/workflows/release.yml)
+[![最新版本](https://img.shields.io/github/v/release/Bai2001/vpn-reconnect?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/Bai2001/vpn-reconnect/releases/latest)
+
 Windows 桌面小工具：登录后常驻后台，按间隔检查公司 L2TP VPN 是否还通；断了自动用软件自己保存的账号密码拨号重连，链路挂死时重启相关服务与网卡。
 
 ## 背景
@@ -10,6 +14,11 @@ Windows 桌面小工具：登录后常驻后台，按间隔检查公司 L2TP VPN
 
 - Windows 10/11，.NET 8 运行时（`net8.0-windows`）
 - 需要管理员权限才能重启服务/网卡；开机启动通过计划任务注册（最高权限）
+
+## 下载
+
+到 [Releases](https://github.com/Bai2001/vpn-reconnect/releases/latest) 下载 `VpnReconnect-<版本>-win-x64.zip`：
+里面是**单个自包含 exe**（自带 .NET 8 运行时，免安装），解压双击即可运行。
 
 ## 构建与运行
 
@@ -53,6 +62,20 @@ Windows 重启/更新后自动重开本程序时也会带上该参数，因此�
 日志列：时间 / 步骤 / 结果 / 依据，界面倒序显示最近 500 条，更早的用「导出」查看。**日志不含密码。**
 
 状态不变时「检查」行每 5 分钟才记一条，状态变化立即记录，拨号与重启过程全部记录。
+
+## 发布新版本
+
+发布是自动化的（`.github/workflows/release.yml`）：
+
+```powershell
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+推上去之后 GitHub Actions 会编译 → 跑单元测试 → 发布自包含单文件 exe → 打包 zip 与 sha256 → 建 Release 并附上产物。
+也可以在 Actions 页面手动运行「Release」工作流，填 `1.2.0` 这样的版本号（会以当前 main 提交为基准建 tag）。
+
+`push` 到 `main` / 提 PR 会触发 `ci.yml`，只做编译与单元测试。
 
 ## 目录结构
 

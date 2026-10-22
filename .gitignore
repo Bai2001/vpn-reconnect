@@ -3,3 +3,9 @@ obj/
 .superpowers/
 *.user
 credentials.bin
+
+# 本地打包产物
+publish/
+release-notes.md
+VpnReconnect-*.zip
+VpnReconnect-*.zip.sha256
