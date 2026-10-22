@@ -25,17 +25,36 @@ public sealed class SingleInstance : IDisposable
         _watcher.Start();
     }
 
-    public static bool TryBecomePrimary(out SingleInstance? gate)
+    /// <param name="waitForRelease">
+    /// 等待旧实例释放单实例锁的时长；更新后重启时用，正常启动不等待。
+    /// </param>
+    public static bool TryBecomePrimary(out SingleInstance? gate, TimeSpan? waitForRelease = null)
     {
         var mutex = new Mutex(false, MutexName);
+        var deadline = DateTime.UtcNow + (waitForRelease ?? TimeSpan.Zero);
         var acquired = false;
-        try
+        while (true)
         {
-            acquired = mutex.WaitOne(0);
-        }
-        catch (AbandonedMutexException)
-        {
-            acquired = true;
+            try
+            {
+                acquired = mutex.WaitOne(0);
+            }
+            catch (AbandonedMutexException)
+            {
+                acquired = true;
+            }
+
+            if (acquired)
+            {
+                break;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                break;
+            }
+
+            Thread.Sleep(200);
         }
 
         if (!acquired)

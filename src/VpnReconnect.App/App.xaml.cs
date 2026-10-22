@@ -14,11 +14,13 @@ public partial class App : Application
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var background = StartupArgs.IsBackground(e.Args);
+        var takeover = StartupArgs.IsTakeover(e.Args);
 
         // Windows 重启/更新后自动重开本程序时，也走静默参数，避免登录后又弹窗
         RegisterRestart();
 
-        if (!SingleInstance.TryBecomePrimary(out _gate))
+        // 更新后重启会带 --takeover：等旧进程退出释放单实例锁再接手
+        if (!SingleInstance.TryBecomePrimary(out _gate, takeover ? TimeSpan.FromSeconds(20) : null))
         {
             // 只有用户主动再打开一次才唤出窗口；静默启动的第二份不要弹窗
             if (!background)
@@ -31,6 +33,11 @@ public partial class App : Application
         }
 
         _host = new AppHost();
+        _host.ReleaseInstanceForRestart = () =>
+        {
+            _gate?.Dispose();
+            _gate = null;
+        };
         _gate!.ShowRequested += (_, _) => _host.RequestShow();
         _host.ExitRequested += Shutdown;
         _host.Start();

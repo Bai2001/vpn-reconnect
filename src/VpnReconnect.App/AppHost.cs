@@ -6,6 +6,7 @@ using VpnReconnect.Recovery;
 using VpnReconnect.Session;
 using VpnReconnect.Settings;
 using VpnReconnect.Startup;
+using VpnReconnect.Updates;
 
 namespace VpnReconnect.App;
 
@@ -17,12 +18,14 @@ public sealed class AppHost : IDisposable
     private readonly CredentialStore _store;
     private readonly RecoveryCycle _cycle = new();
     private readonly CheckLogThrottle _throttle = new();
+    private readonly UpdateCoordinator _updates;
     private readonly SessionController _session = new();
     private readonly WindowsRecoveryIo _io;
     private readonly object _gate = new();
     private AppSettings _settings;
     private CheckService _check;
     private System.Threading.Timer? _timer;
+    private System.Threading.Timer? _updateTimer;
     private MainWindow? _window;
     private TrayIcon? _tray;
     private HealthVerdict? _last;
@@ -37,6 +40,10 @@ public sealed class AppHost : IDisposable
         _store = new CredentialStore(SettingsFile.CredentialsPath, new DpapiProtector());
         _io = new WindowsRecoveryIo(_settings, _lookup, _ping, _log);
         _check = BuildCheck();
+        _updates = new UpdateCoordinator(
+            _log,
+            CurrentVersion,
+            Path.Combine(SettingsFile.DirectoryPath, "update"));
         EnsureShortcut();
     }
 
@@ -54,9 +61,91 @@ public sealed class AppHost : IDisposable
     public void Start()
     {
         _session.StartBackground();
+        var exe = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(exe))
+        {
+            _ = Task.Run(() => CleanupBackup(exe));
+        }
+
         EnsureTray();
         RestartTimer();
+        RestartUpdateTimer();
         _ = CheckOnceAsync();
+        if (_settings.AutoCheckUpdates)
+        {
+            _ = CheckUpdatesAsync(manual: false);
+        }
+    }
+
+    public UpdateState UpdateSnapshot => _updates.Snapshot;
+
+    /// <summary>重启前用它主动释放单实例锁，避免新进程抢不到锁直接退出。</summary>
+    public Action? ReleaseInstanceForRestart { get; set; }
+
+    /// <summary>查最新版本；有更新时弹托盘气泡提示。</summary>
+    public async Task CheckUpdatesAsync(bool manual)
+    {
+        var ok = await _updates.CheckAsync(manual, CancellationToken.None).ConfigureAwait(false);
+        _ = ok;
+        var state = _updates.Snapshot;
+        _tray?.SetUpdateAvailable(state.Stage == UpdateStage.Available ? state.LatestVersion : null);
+        if (state.Stage == UpdateStage.Available)
+        {
+            _tray?.ShowBalloon(
+                $"发现新版本 v{state.LatestVersion}",
+                state.CanInstall ? "打开主窗口点「立即更新」就能升级。" : "请到 Release 页面手动下载。",
+                System.Windows.Forms.ToolTipIcon.Info);
+        }
+
+        Publish();
+    }
+
+    /// <summary>托盘里点「检查更新」：查到新版本就把主窗口叫出来，让用户决定装不装。</summary>
+    private async Task CheckUpdatesFromTrayAsync()
+    {
+        await CheckUpdatesAsync(manual: true).ConfigureAwait(false);
+        if (_updates.Snapshot.Stage == UpdateStage.Available)
+        {
+            RequestShow();
+        }
+    }
+
+    /// <summary>下载、校验并替换程序文件，然后重启到新版本。</summary>
+    public async Task<bool> ApplyUpdateAsync(bool windowVisible)
+    {
+        var exe = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(exe))
+        {
+            _updates.MarkFailed("找不到当前程序路径，无法自动更新，请到 Release 页面手动下载");
+            Publish();
+            return false;
+        }
+
+        var prepared = await _updates.PrepareAsync(CancellationToken.None).ConfigureAwait(false);
+        if (prepared is null)
+        {
+            Publish();
+            return false;
+        }
+
+        var version = _updates.Snapshot.LatestVersion ?? "新版本";
+        try
+        {
+            UpdateSwapper.Replace(exe, prepared);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _updates.MarkFailed($"替换程序文件失败：{ex.Message}。可到 Release 页面手动下载");
+            _log.Append("更新", "替换失败", ex.Message, null);
+            Publish();
+            return false;
+        }
+
+        _log.Append("更新", "已替换", $"已更新到 v{version}，准备重启", null);
+        _updates.MarkRestarting(version);
+        Publish();
+        RestartProcess(exe, windowVisible);
+        return true;
     }
 
     public void RequestShow()
@@ -416,6 +505,8 @@ public sealed class AppHost : IDisposable
 
         _disposed = true;
         StopTimer();
+        StopUpdateTimer();
+        _updates.Dispose();
         _tray?.Dispose();
         _tray = null;
         _window = null;
@@ -428,6 +519,7 @@ public sealed class AppHost : IDisposable
             var tray = new TrayIcon();
             tray.OpenRequested += RequestShow;
             tray.CheckRequested += () => _ = CheckOnceAsync();
+            tray.UpdateCheckRequested += () => _ = CheckUpdatesFromTrayAsync();
             tray.ExitRequested += RequestExit;
             _tray = tray;
             tray.UpdateStatus(Snapshot());
@@ -465,6 +557,80 @@ public sealed class AppHost : IDisposable
     {
         _timer?.Dispose();
         _timer = null;
+    }
+
+    /// <summary>上次更新留下的 .old 要等旧进程退干净才能删，失败就多试几次。</summary>
+    private static void CleanupBackup(string exePath)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            if (UpdateSwapper.TryCleanupBackup(exePath))
+            {
+                break;
+            }
+
+            Thread.Sleep(1000);
+        }
+
+        UpdateCoordinator.PurgeOldFiles(Path.Combine(SettingsFile.DirectoryPath, "update"));
+    }
+
+    private void RestartUpdateTimer()
+    {
+        StopUpdateTimer();
+        var interval = TimeSpan.FromHours(24);
+        _updateTimer = new System.Threading.Timer(
+            _ =>
+            {
+                if (!_disposed)
+                {
+                    _ = CheckUpdatesAsync(manual: false);
+                }
+            },
+            null,
+            interval,
+            interval);
+    }
+
+    private void StopUpdateTimer()
+    {
+        _updateTimer?.Dispose();
+        _updateTimer = null;
+    }
+
+    private static ReleaseVersion CurrentVersion()
+    {
+        var version = typeof(AppHost).Assembly.GetName().Version;
+        return version is null
+            ? new ReleaseVersion(0, 0, 0, false)
+            : ReleaseVersion.FromSystem(version);
+    }
+
+    private void RestartProcess(string exePath, bool windowVisible)
+    {
+        var arguments = windowVisible
+            ? StartupArgs.Takeover
+            : $"{StartupArgs.Takeover} {StartupArgs.Background}";
+
+        // 先自己放开单实例锁再拉新进程，否则新进程（尤其是不认识 --takeover 的旧版本）
+        // 会因为抢不到锁而直接退出，表现为更新完程序就不见了
+        ReleaseInstanceForRestart?.Invoke();
+        Thread.Sleep(300);
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath, arguments)
+            {
+                WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
+            });
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            _updates.MarkFailed($"重启新版本失败（{ex.Message}），请手动打开程序");
+            Publish();
+            return;
+        }
+
+        Exit();
     }
 
     private MainWindow EnsureWindow()

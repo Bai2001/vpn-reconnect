@@ -12,6 +12,7 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _openItem;
     private readonly ToolStripMenuItem _checkItem;
+    private readonly ToolStripMenuItem _updateItem;
     private readonly ToolStripMenuItem _exitItem;
     private readonly Dictionary<TrayState, Icon> _icons = new();
     private TrayState _state = (TrayState)(-1);
@@ -25,6 +26,7 @@ public sealed class TrayIcon : IDisposable
         _statusItem = new ToolStripMenuItem("当前状态：尚未检查") { Enabled = false };
         _openItem = new ToolStripMenuItem("打开主窗口", null, (_, _) => OnMenuClick(OpenRequested));
         _checkItem = new ToolStripMenuItem("立即检查", null, (_, _) => OnMenuClick(CheckRequested));
+        _updateItem = new ToolStripMenuItem("检查更新", null, (_, _) => OnMenuClick(UpdateCheckRequested));
         _exitItem = new ToolStripMenuItem("退出程序", null, (_, _) => OnMenuClick(ExitRequested));
 
         var menu = new ContextMenuStrip { ShowImageMargin = false };
@@ -32,6 +34,7 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_openItem);
         menu.Items.Add(_checkItem);
+        menu.Items.Add(_updateItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_exitItem);
 
@@ -49,6 +52,8 @@ public sealed class TrayIcon : IDisposable
     public event Action? OpenRequested;
 
     public event Action? CheckRequested;
+
+    public event Action? UpdateCheckRequested;
 
     public event Action? ExitRequested;
 
@@ -129,6 +134,17 @@ public sealed class TrayIcon : IDisposable
         catch (InvalidOperationException)
         {
         }
+    }
+
+    /// <summary>有可用新版本时在菜单里标出来。</summary>
+    public void SetUpdateAvailable(string? version)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _updateItem.Text = string.IsNullOrWhiteSpace(version) ? "检查更新" : $"有新版本 v{version}，点此更新";
     }
 
     public void SetBusy(bool busy)

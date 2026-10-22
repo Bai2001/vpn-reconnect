@@ -29,9 +29,12 @@
                                 <TextBlock x:Name="ConnectedText" Text="尚未检查" FontSize="25" FontWeight="SemiBold" />
                                 <TextBlock x:Name="StatusSubText" Style="{StaticResource Hint}" Margin="0,5,0,0" Text="正在获取状态…" />
                             </StackPanel>
-                            <Border x:Name="StatusBadge" Grid.Column="2" CornerRadius="20" Padding="12,5" Background="#F3F4F6" VerticalAlignment="Center">
-                                <TextBlock x:Name="StatusBadgeText" Text="待检查" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                            </Border>
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                <Border x:Name="StatusBadge" CornerRadius="20" Padding="12,5" Background="#F3F4F6" HorizontalAlignment="Right">
+                                    <TextBlock x:Name="StatusBadgeText" Text="待检查" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                </Border>
+                                <Button x:Name="UpdateApplyButton" Content="立即更新" Style="{StaticResource PrimaryButton}" MinWidth="0" FontSize="12" Padding="12,4" Margin="0,8,0,0" HorizontalAlignment="Right" Visibility="Collapsed" Click="ApplyUpdate_Click" />
+                            </StackPanel>
                         </Grid>
                     </Border>
 
@@ -114,6 +117,8 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="用户名" Style="{StaticResource FieldLabel}" Margin="0,0,12,8" />
@@ -138,6 +143,19 @@
                                 <TextBlock Grid.Row="6" Grid.Column="0" Text="开机启动" Style="{StaticResource FieldLabel}" Margin="0,0,12,8" />
                                 <CheckBox Grid.Row="6" Grid.Column="1" x:Name="StartOnLoginBox" Content="登录 Windows 后静默启动（只在托盘，不弹窗口）" Margin="0,0,0,4" />
                                 <TextBlock Grid.Row="7" Grid.Column="1" x:Name="StartupStatusText" Style="{StaticResource Hint}" Margin="0,0,0,8" Text="" />
+
+                                <TextBlock Grid.Row="8" Grid.Column="0" Text="自动更新" Style="{StaticResource FieldLabel}" Margin="0,0,12,8" />
+                                <CheckBox Grid.Row="8" Grid.Column="1" x:Name="CheckUpdatesBox" Margin="0,0,0,8" Content="启动时和每天自动检查新版本（发现后提示，点确认才更新）" />
+
+                                <TextBlock Grid.Row="9" Grid.Column="0" Text="当前版本" Style="{StaticResource FieldLabel}" Margin="0,0,12,0" VerticalAlignment="Top" />
+                                <Grid Grid.Row="9" Grid.Column="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="UpdateMessageText" Style="{StaticResource Hint}" TextWrapping="Wrap" VerticalAlignment="Center" Text="尚未检查更新" />
+                                    <Button Grid.Column="1" x:Name="UpdateCheckButton" Content="检查更新" Style="{StaticResource SecondaryButton}" MinWidth="0" Margin="12,0,0,0" Click="CheckUpdate_Click" />
+                                </Grid>
                             </Grid>
                         </StackPanel>
                     </Border>

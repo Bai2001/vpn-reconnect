@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using VpnReconnect.Logging;
 using VpnReconnect.Settings;
 
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private const int LogPageSize = 500;
 
     private readonly AppHost _host;
+    private DispatcherTimer? _updatePoll;
     private IReadOnlyList<LogRow> _logRows = Array.Empty<LogRow>();
     private string? _keptAdapterName;
 
@@ -41,6 +43,7 @@ public partial class MainWindow : Window
         UsernameBox.Text = settings.Username ?? "";
         IntervalBox.Text = settings.IntervalSeconds.ToString();
         StartOnLoginBox.IsChecked = settings.StartOnLogin;
+        CheckUpdatesBox.IsChecked = settings.AutoCheckUpdates;
         PasswordBox.Clear();
         PasswordHint.Text = _host.HasStoredPassword
             ? "已保存密码。密码框不回显已存密码，留空则不修改"
@@ -56,6 +59,7 @@ public partial class MainWindow : Window
         _logRows = _host.ReadLog(LogPageSize);
         ShowStatus(_host.Snapshot(), _logRows, _host.CurrentSettings.IntervalSeconds);
         ShowLog();
+        ShowUpdate(_host.UpdateSnapshot);
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -134,7 +138,8 @@ public partial class MainWindow : Window
             adapterName,
             UsernameBox.Text,
             interval,
-            StartOnLoginBox.IsChecked == true);
+            StartOnLoginBox.IsChecked == true,
+            CheckUpdatesBox.IsChecked == true);
         var password = PasswordBox.Password;
         var outcome = _host.Save(settings, password);
         PasswordBox.Clear();
@@ -152,6 +157,51 @@ public partial class MainWindow : Window
         }
 
         SetMessage("已保存。新的设置已生效。", MessageKind.Success);
+    }
+
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateCheckButton.IsEnabled = false;
+        UpdateMessageText.Text = "正在检查更新…";
+        try
+        {
+            await _host.CheckUpdatesAsync(manual: true);
+        }
+        finally
+        {
+            UpdateCheckButton.IsEnabled = true;
+            ShowUpdate(_host.UpdateSnapshot);
+        }
+    }
+
+    private async void ApplyUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        var state = _host.UpdateSnapshot;
+        var message = state.CanInstall
+            ? $"将下载 v{state.LatestVersion} 并替换当前程序，装好后自动重启。\n更新期间 VPN 检查会短暂中断。\n确定现在更新吗？"
+            : $"发现新版本 v{state.LatestVersion}，但缺少可自动安装的安装包。\n请到 Release 页面手动下载。";
+        if (!state.CanInstall)
+        {
+            MessageBox.Show(this, message, "更新", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MessageBox.Show(this, message, "更新", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        UpdateApplyButton.IsEnabled = false;
+        UpdateCheckButton.IsEnabled = false;
+        StartUpdatePolling();
+        var ok = await _host.ApplyUpdateAsync(windowVisible: IsVisible);
+        if (!ok)
+        {
+            StopUpdatePolling();
+            UpdateApplyButton.IsEnabled = true;
+            UpdateCheckButton.IsEnabled = true;
+            ShowUpdate(_host.UpdateSnapshot);
+        }
     }
 
     private void RefreshLog_Click(object sender, RoutedEventArgs e)
@@ -299,6 +349,37 @@ public partial class MainWindow : Window
         }
 
         return "—";
+    }
+
+    private void StartUpdatePolling()
+    {
+        StopUpdatePolling();
+        _updatePoll = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(300) };
+        _updatePoll.Tick += (_, _) => ShowUpdate(_host.UpdateSnapshot);
+        _updatePoll.Start();
+    }
+
+    private void StopUpdatePolling()
+    {
+        _updatePoll?.Stop();
+        _updatePoll = null;
+    }
+
+    private void ShowUpdate(UpdateState state)
+    {
+        UpdateMessageText.Text = $"当前版本 v{state.CurrentVersion} · {state.Message}";
+        var busy = state.Stage is UpdateStage.Checking or UpdateStage.Downloading or UpdateStage.Installing;
+        UpdateCheckButton.IsEnabled = !busy;
+        var canApply = state.CanInstall
+            && state.Stage is UpdateStage.Available or UpdateStage.Failed
+            && !string.IsNullOrWhiteSpace(state.LatestVersion);
+        UpdateApplyButton.Visibility = canApply ? Visibility.Visible : Visibility.Collapsed;
+        if (canApply)
+        {
+            UpdateApplyButton.Content = $"更新到 v{state.LatestVersion}";
+        }
+
+        UpdateApplyButton.IsEnabled = canApply && !busy;
     }
 
     private void ShowLog()
